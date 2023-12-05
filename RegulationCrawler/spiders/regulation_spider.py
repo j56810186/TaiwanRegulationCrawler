@@ -1,6 +1,7 @@
 
 from pathlib import Path
 
+import arrow
 import functools
 import json
 import logging
@@ -8,7 +9,9 @@ import scrapy
 
 
 # Set logger.
+log_file_handler = logging.FileHandler('TaiwanRegulationCrawlerLogger.log')
 logger = logging.getLogger('TaiwanRegulationCrawlerLogger.log')
+logger.addHandler(log_file_handler)
 logger.setLevel(logging.ERROR)
 
 REGULATION_PATH = Path('./regulations')
@@ -140,6 +143,9 @@ class RegulationSpider(scrapy.Spider):
 
             try:
                 if chapter:
+                    part = response.xpath('//div[@class="h3 char-1"]') # 編
+                    if part:
+                        pass
                     section = response.xpath('//div[@class="h3 char-3"]') # 節
                     if section:
                         chapter_name = ''
@@ -147,6 +153,7 @@ class RegulationSpider(scrapy.Spider):
                         for row in regulation_rows:
                             if 'h3 char-2' in row.get(): # Means this row is a chapter's title (starting point).
                                 chapter_name = row.xpath('./text()').get().strip()
+                                section_name = ''
                                 if not regulation_article_number_content_dict.get(chapter_name):
                                     regulation_article_number_content_dict[chapter_name] = {}
                                 else:
@@ -164,23 +171,27 @@ class RegulationSpider(scrapy.Spider):
                                 contents = [i.strip() for i in row.xpath('.//div[@class="col-data"]//text()').getall() if i.strip()]
                                 if contents:
                                     contents = '\n'.join(contents)
-                                regulation_article_number_content_dict[chapter_name][section_name][article_number] = contents
-                    chapter_name = ''
-                    for row in regulation_rows:
-                        if 'h3 char-2' in row.get(): # Means this row is a chapter's title (starting point).
-                            chapter_name = row.xpath('./text()').get().strip()
-                            if not regulation_article_number_content_dict.get(chapter_name):
-                                regulation_article_number_content_dict[chapter_name] = {}
-                            else:
-                                continue
-                        else: # This row is article number and content.
-                            article_number = [i.strip() for i in row.xpath('.//div[@class="col-no"]//text()').getall() if i.strip()]
-                            if article_number:
-                                article_number = article_number[0]
-                            contents = [i.strip() for i in row.xpath('.//div[@class="col-data"]//text()').getall() if i.strip()]
-                            if contents:
-                                contents = '\n'.join(contents)
-                            regulation_article_number_content_dict[chapter_name][article_number] = contents
+                                if section_name:
+                                    regulation_article_number_content_dict[chapter_name][section_name][article_number] = contents
+                                else:
+                                    regulation_article_number_content_dict[chapter_name][article_number] = contents
+                    else:
+                        chapter_name = ''
+                        for row in regulation_rows:
+                            if 'h3 char-2' in row.get(): # Means this row is a chapter's title (starting point).
+                                chapter_name = row.xpath('./text()').get().strip()
+                                if not regulation_article_number_content_dict.get(chapter_name):
+                                    regulation_article_number_content_dict[chapter_name] = {}
+                                else:
+                                    continue
+                            else: # This row is article number and content.
+                                article_number = [i.strip() for i in row.xpath('.//div[@class="col-no"]//text()').getall() if i.strip()]
+                                if article_number:
+                                    article_number = article_number[0]
+                                contents = [i.strip() for i in row.xpath('.//div[@class="col-data"]//text()').getall() if i.strip()]
+                                if contents:
+                                    contents = '\n'.join(contents)
+                                regulation_article_number_content_dict[chapter_name][article_number] = contents
                 else:
                     for row in regulation_rows:
                         article_number = [i.strip() for i in row.xpath('.//div[@class="col-no"]//text()').getall() if i.strip()]
@@ -192,13 +203,13 @@ class RegulationSpider(scrapy.Spider):
                         if article_number and contents:
                             regulation_article_number_content_dict[article_number] = contents
             except Exception as e:
-                logger.error(f'Storage Directory: {storage_dir}, Regulation Name: {regulation_name}, Error: {e}, HTML: {row.get()}')
-        with open(storage_dir / regulation_name, 'w', encoding='UTF-8') as file:
-            json.dump(regulation_article_number_content_dict, file, ensure_ascii=False)
+                logger.error(f'Time: {arrow.now().format("YYYY-MM-DD HH:mm:ss")}, Storage Directory: {storage_dir}, ' + \
+                             f'Regulation Name: {regulation_name}, Error: {e.args}, HTML: {row.get()}')
+        with open(storage_dir / f'{regulation_name}.json', 'w', encoding='UTF-8') as file:
+            json.dump(regulation_article_number_content_dict, file, ensure_ascii=False, indent=4)
 
 
     def download_files(self, response, args):
         pass
 
-# functools.partial()
 
