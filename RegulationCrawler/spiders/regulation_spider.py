@@ -2,8 +2,14 @@
 from pathlib import Path
 
 import functools
+import json
+import logging
 import scrapy
 
+
+# Set logger.
+logger = logging.getLogger('TaiwanRegulationCrawlerLogger.log')
+logger.setLevel(logging.ERROR)
 
 REGULATION_PATH = Path('./regulations')
 if not REGULATION_PATH.exists():
@@ -74,21 +80,18 @@ class RegulationSpider(scrapy.Spider):
                     make_directories_for_regulations(link, parrent_path=new_dir) # link here is a sub-tree, it's a dict.
             return
 
-        def request_links_in_link_tree(regulation_tree_dict, parrent_path=REGULATION_PATH):
+        def get_data_to_request_by_link_tree(regulation_tree_dict, parrent_path=REGULATION_PATH):
+            result = []
             for regulation_name, link in regulation_tree_dict.items():
                 current_dir = parrent_path / regulation_name
                 # If it have sub-tree, we need to create sub-direcotry.
                 if type(link) == dict:
                     # link here is a sub-tree, it's a dict.
-                    request_links_in_link_tree(link, parrent_path=current_dir)
+                    result.extend(get_data_to_request_by_link_tree(link, parrent_path=current_dir))
                 else: # don't have sub-tree, so we can call the request for link.
-                    parse_link = functools.partial(
-                        self.parse_link,
-                        storeage_dir=current_dir,
-                    )
                     url = f'{self.LAW_LIST_URL}{link}'
-                    # print(current_dir.stem, url)
-                    yield scrapy.Request(self, url=url, callback=parse_link)
+                    result.append({'url': url, 'storage_dir': current_dir})
+            return result
 
 
         ul_root = response.xpath('//ul[@id="tree"]')
@@ -98,18 +101,103 @@ class RegulationSpider(scrapy.Spider):
         make_directories_for_regulations(regulation_name_link_dict)
 
         # Call requests.
-        request_links_in_link_tree(regulation_name_link_dict)
+        for data in get_data_to_request_by_link_tree(regulation_name_link_dict):
+            parse_link = functools.partial(
+                self.parse_link,
+                storage_dir=data['storage_dir'],
+            )
+            yield scrapy.Request(url=data['url'], callback=parse_link)
 
 
     def parse_link(self, response, storage_dir=REGULATION_PATH):
-        print(response.xpath())
+        regulation_links = response.xpath('//td//a')
+        for a_tag in regulation_links:
+            regulation_name = a_tag.xpath('./text()').get()
+            if not regulation_name:
+                continue
+            link = a_tag.xpath('./@href').get()
+            parse_regulation = functools.partial(
+                self.parse_regulation,
+                storage_dir=storage_dir,
+                regulation_name=regulation_name,
+            )
+            url = f'{self.LAW_LIST_URL}{link}'
+            yield scrapy.Request(url=url, callback=parse_regulation)
 
 
-    def parse_regulation():
-        print()
+    def parse_regulation(self, response, storage_dir, regulation_name):
+        file_download_links = response.xpath('//a[contains(@href, "LawGetFile.ashx")]')
+        if file_download_links:
+            # TODO: Download file here.
+            pass
+
+        regulation_article_number_content_dict = {}
+        regulation_rows = response.xpath('//div[@id="pnLawFla"]/div/div')
+        if regulation_rows: # Since some regulation pages have only PDF file, have no regulation content.
+            chapter = response.xpath('//div[@class="h3 char-2"]') # 章
+
+            # TODO: Abstractize this and the following that do not need chapter.
+
+            try:
+                if chapter:
+                    section = response.xpath('//div[@class="h3 char-3"]') # 節
+                    if section:
+                        chapter_name = ''
+                        section_name = ''
+                        for row in regulation_rows:
+                            if 'h3 char-2' in row.get(): # Means this row is a chapter's title (starting point).
+                                chapter_name = row.xpath('./text()').get().strip()
+                                if not regulation_article_number_content_dict.get(chapter_name):
+                                    regulation_article_number_content_dict[chapter_name] = {}
+                                else:
+                                    continue
+                            elif 'h3 char-3' in row.get(): # Means this row is a section's title (starting point).
+                                section_name = row.xpath('./text()').get().strip()
+                                if not regulation_article_number_content_dict[chapter_name].get(section_name):
+                                    regulation_article_number_content_dict[chapter_name][section_name] = {}
+                                else:
+                                    continue
+                            else: # This row is article number and content.
+                                article_number = [i.strip() for i in row.xpath('.//div[@class="col-no"]//text()').getall() if i.strip()]
+                                if article_number:
+                                    article_number = article_number[0]
+                                contents = [i.strip() for i in row.xpath('.//div[@class="col-data"]//text()').getall() if i.strip()]
+                                if contents:
+                                    contents = '\n'.join(contents)
+                                regulation_article_number_content_dict[chapter_name][section_name][article_number] = contents
+                    chapter_name = ''
+                    for row in regulation_rows:
+                        if 'h3 char-2' in row.get(): # Means this row is a chapter's title (starting point).
+                            chapter_name = row.xpath('./text()').get().strip()
+                            if not regulation_article_number_content_dict.get(chapter_name):
+                                regulation_article_number_content_dict[chapter_name] = {}
+                            else:
+                                continue
+                        else: # This row is article number and content.
+                            article_number = [i.strip() for i in row.xpath('.//div[@class="col-no"]//text()').getall() if i.strip()]
+                            if article_number:
+                                article_number = article_number[0]
+                            contents = [i.strip() for i in row.xpath('.//div[@class="col-data"]//text()').getall() if i.strip()]
+                            if contents:
+                                contents = '\n'.join(contents)
+                            regulation_article_number_content_dict[chapter_name][article_number] = contents
+                else:
+                    for row in regulation_rows:
+                        article_number = [i.strip() for i in row.xpath('.//div[@class="col-no"]//text()').getall() if i.strip()]
+                        if article_number:
+                            article_number = article_number[0]
+                        contents = [i.strip() for i in row.xpath('.//div[@class="col-data"]//text()').getall() if i.strip()]
+                        if contents:
+                            contents = '\n'.join(contents)
+                        if article_number and contents:
+                            regulation_article_number_content_dict[article_number] = contents
+            except Exception as e:
+                logger.error(f'Storage Directory: {storage_dir}, Regulation Name: {regulation_name}, Error: {e}, HTML: {row.get()}')
+        with open(storage_dir / regulation_name, 'w', encoding='UTF-8') as file:
+            json.dump(regulation_article_number_content_dict, file, ensure_ascii=False)
 
 
-    def parse_files():
+    def download_files(self, response, args):
         pass
 
 # functools.partial()
