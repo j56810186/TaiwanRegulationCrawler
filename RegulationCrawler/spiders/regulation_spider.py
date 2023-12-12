@@ -131,80 +131,21 @@ class RegulationSpider(scrapy.Spider):
     def parse_regulation(self, response, storage_dir, regulation_name):
         file_download_links = response.xpath('//a[contains(@href, "LawGetFile.ashx")]')
         if file_download_links:
-            # TODO: Download file here.
+            # FIXME: Download file here.
             pass
 
         regulation_article_number_content_dict = {}
         regulation_rows = response.xpath('//div[@id="pnLawFla"]/div/div')
         if regulation_rows: # Since some regulation pages have only PDF file, have no regulation content.
-            chapter = response.xpath('//div[@class="h3 char-2"]') # 章
+            for row in regulation_rows:
+                article_number = [i.strip() for i in row.xpath('.//div[@class="col-no"]//text()').getall()]
+                if not article_number:
+                    continue
+                article_number = article_number[0]
+                contents = [i.strip() for i in row.xpath('.//div[@class="col-data"]//text()').getall()]
+                contents = '\n'.join(contents)
+                regulation_article_number_content_dict[article_number] = contents
 
-            # TODO: Abstractize this and the following that do not need chapter.
-
-            try:
-                if chapter:
-                    part = response.xpath('//div[@class="h3 char-1"]') # 編
-                    if part:
-                        pass
-                    section = response.xpath('//div[@class="h3 char-3"]') # 節
-                    if section:
-                        chapter_name = ''
-                        section_name = ''
-                        for row in regulation_rows:
-                            if 'h3 char-2' in row.get(): # Means this row is a chapter's title (starting point).
-                                chapter_name = row.xpath('./text()').get().strip()
-                                section_name = ''
-                                if not regulation_article_number_content_dict.get(chapter_name):
-                                    regulation_article_number_content_dict[chapter_name] = {}
-                                else:
-                                    continue
-                            elif 'h3 char-3' in row.get(): # Means this row is a section's title (starting point).
-                                section_name = row.xpath('./text()').get().strip()
-                                if not regulation_article_number_content_dict[chapter_name].get(section_name):
-                                    regulation_article_number_content_dict[chapter_name][section_name] = {}
-                                else:
-                                    continue
-                            else: # This row is article number and content.
-                                article_number = [i.strip() for i in row.xpath('.//div[@class="col-no"]//text()').getall() if i.strip()]
-                                if article_number:
-                                    article_number = article_number[0]
-                                contents = [i.strip() for i in row.xpath('.//div[@class="col-data"]//text()').getall() if i.strip()]
-                                if contents:
-                                    contents = '\n'.join(contents)
-                                if section_name:
-                                    regulation_article_number_content_dict[chapter_name][section_name][article_number] = contents
-                                else:
-                                    regulation_article_number_content_dict[chapter_name][article_number] = contents
-                    else:
-                        chapter_name = ''
-                        for row in regulation_rows:
-                            if 'h3 char-2' in row.get(): # Means this row is a chapter's title (starting point).
-                                chapter_name = row.xpath('./text()').get().strip()
-                                if not regulation_article_number_content_dict.get(chapter_name):
-                                    regulation_article_number_content_dict[chapter_name] = {}
-                                else:
-                                    continue
-                            else: # This row is article number and content.
-                                article_number = [i.strip() for i in row.xpath('.//div[@class="col-no"]//text()').getall() if i.strip()]
-                                if article_number:
-                                    article_number = article_number[0]
-                                contents = [i.strip() for i in row.xpath('.//div[@class="col-data"]//text()').getall() if i.strip()]
-                                if contents:
-                                    contents = '\n'.join(contents)
-                                regulation_article_number_content_dict[chapter_name][article_number] = contents
-                else:
-                    for row in regulation_rows:
-                        article_number = [i.strip() for i in row.xpath('.//div[@class="col-no"]//text()').getall() if i.strip()]
-                        if article_number:
-                            article_number = article_number[0]
-                        contents = [i.strip() for i in row.xpath('.//div[@class="col-data"]//text()').getall() if i.strip()]
-                        if contents:
-                            contents = '\n'.join(contents)
-                        if article_number and contents:
-                            regulation_article_number_content_dict[article_number] = contents
-            except Exception as e:
-                logger.error(f'Time: {arrow.now().format("YYYY-MM-DD HH:mm:ss")}, Storage Directory: {storage_dir}, ' + \
-                             f'Regulation Name: {regulation_name}, Error: {e.args}, HTML: {row.get()}')
         with open(storage_dir / f'{regulation_name}.json', 'w', encoding='UTF-8') as file:
             json.dump(regulation_article_number_content_dict, file, ensure_ascii=False, indent=4)
 
