@@ -138,11 +138,11 @@ class RegulationSpider(scrapy.Spider):
         regulation_rows = response.xpath('//div[@id="pnLawFla"]/div/div')
         if regulation_rows: # Since some regulation pages have only PDF file, have no regulation content.
             for row in regulation_rows:
-                article_number = [i.strip() for i in row.xpath('.//div[@class="col-no"]//text()').getall()]
+                article_number = [i.strip() for i in row.xpath('.//div[@class="col-no"]//text()').getall() if i.strip()]
                 if not article_number:
                     continue
                 article_number = article_number[0]
-                contents = [i.strip() for i in row.xpath('.//div[@class="col-data"]//text()').getall()]
+                contents = [i.strip() for i in row.xpath('.//div[@class="col-data"]//text()').getall() if i.strip()]
                 contents = '\n'.join(contents)
                 regulation_article_number_content_dict[article_number] = contents
 
