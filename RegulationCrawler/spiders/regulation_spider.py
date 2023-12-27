@@ -51,7 +51,7 @@ class RegulationSpider(scrapy.Spider):
             name_link_dict = {}
             for li in ul.xpath('li'):
                 a_tag = li.xpath('.//a')
-                name = a_tag.xpath('./text()').get()
+                name = a_tag.xpath('./text()').get().strip()
                 sub_ul = li.xpath('ul')
                 if not __is_deprecated_regulation(name):
                     if sub_ul: # if have sub-ul, recursively solve it.
