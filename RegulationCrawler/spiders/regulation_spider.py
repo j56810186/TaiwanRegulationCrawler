@@ -74,7 +74,7 @@ class RegulationSpider(scrapy.Spider):
             # Make directories in the tree-like structure.
             for regulation_name, link in regulation_tree_dict.items():
                 # Make new directory first.
-                new_dir = parrent_path / regulation_name
+                new_dir = parrent_path / regulation_name.strip()
                 if not new_dir.exists():
                     new_dir.mkdir()
 
@@ -141,7 +141,10 @@ class RegulationSpider(scrapy.Spider):
                 article_number = [i.strip() for i in row.xpath('.//div[@class="col-no"]//text()').getall() if i.strip()]
                 if not article_number:
                     continue
-                article_number = article_number[0]
+                if len(article_number) > 1:
+                    article_number = article_number[1]
+                else:
+                    article_number = article_number[0]
                 contents = [i.strip() for i in row.xpath('.//div[@class="col-data"]//text()').getall() if i.strip()]
                 contents = '\n'.join(contents)
                 regulation_article_number_content_dict[article_number] = contents
